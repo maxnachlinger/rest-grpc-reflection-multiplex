@@ -1,0 +1,6 @@
+/target
+.idea
+.vscode
+.run
+out
+.DS_Store

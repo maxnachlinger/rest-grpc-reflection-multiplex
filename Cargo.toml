@@ -1,0 +1,20 @@
+[package]
+name = "axum-tonic-multiplex"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+axum = "0.6.2"
+futures = "0.3"
+hyper = { version = "0.14", features = ["full"] }
+prost = "0.11"
+tokio = { version = "1", features = ["full"] }
+tonic = { version = "0.8" }
+tonic-reflection = "0.6.0"
+tower = { version = "0.4", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+tonic-build = { version = "0.8", features = ["prost"] }
