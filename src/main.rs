@@ -6,13 +6,16 @@ use proto::{
 };
 use std::net::SocketAddr;
 use tonic::{Response as TonicResponse, Status};
+use tonic::transport::Server;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod multiplex_service;
 
 mod proto {
-    #![allow(clippy::derive_partial_eq_without_eq)]
     tonic::include_proto!("helloworld");
+
+    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+        tonic::include_file_descriptor_set!("helloworld_descriptor");
 }
 
 #[derive(Default)]
@@ -44,7 +47,7 @@ async fn main() {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "rest_grpc_multiplex=debug".into()),
+                .unwrap_or_else(|_| "axum-tonic-multiplex=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -52,8 +55,20 @@ async fn main() {
     // build the rest service
     let rest = Router::new().route("/", get(web_root));
 
-    // build the grpc service
-    let grpc = GreeterServer::new(GrpcServiceImpl::default());
+    let greeter_service = GreeterServer::new(GrpcServiceImpl::default());
+
+    let reflection_service = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(proto::FILE_DESCRIPTOR_SET)
+        .build()
+        .unwrap();
+
+    let grpc = Server::builder()
+        .add_service(reflection_service)
+        .add_service(greeter_service)
+        .into_service();
+
+    // the line below works
+    // let grpc = GreeterServer::new(GrpcServiceImpl::default());
 
     // combine them into one service
     let service = MultiplexService::new(rest, grpc);
