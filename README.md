@@ -3,7 +3,7 @@ the [rest-grpc-multiplex example](https://github.com/tokio-rs/axum/tree/main/exa
 outlining an issue I encountered using `tonic-reflection`.
 
 ```shell
-   Compiling axum-tonic-multiplex v0.1.0 (/Users/m0n0096/sandbox/axum-tonic-multiplex)
+   Compiling axum-tonic-multiplex v0.1.0 (/mypathhere/axum-tonic-multiplex)
 error[E0271]: type mismatch resolving `<Routes as Service<hyper::Request<hyper::Body>>>::Error == Infallible`
   --> src/main.rs:79:10
    |
