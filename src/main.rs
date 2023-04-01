@@ -49,7 +49,6 @@ async fn web_root() -> &'static str {
 
 #[tokio::main]
 async fn main() {
-    // initialize tracing
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -58,7 +57,6 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    // build the rest service
     let mut rest = Router::new().route("/", get(web_root));
 
     let greeter_service = GreeterServer::new(GrpcServiceImpl::default());
@@ -75,10 +73,8 @@ async fn main() {
 
     let service = Shared::new(service_fn(move |req| {
         if is_grpc_request(&req) {
-            // Handle Tonic gRPC request
             return Either::A(grpc.call(req).map_ok(|res| res.map(EitherBody::A)));
         }
-        // Handle HTTP request
         Either::B(rest.call(req).map_ok(|res| res.map(EitherBody::B)))
     }));
 
@@ -89,7 +85,7 @@ async fn main() {
 
     server.await.unwrap();
 
-    tracing::info!("GRPC server shutdown");
+    tracing::info!("Server shutdown");
 }
 
 fn is_grpc_request<B>(req: &Request<B>) -> bool {
