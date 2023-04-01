@@ -1,15 +1,21 @@
-use self::multiplex_service::MultiplexService;
+use crate::http_body::EitherBody;
+use axum::http::header::CONTENT_TYPE;
+use axum::http::Request;
 use axum::{routing::get, Router};
+use futures::TryFutureExt;
 use proto::{
     greeter_server::{Greeter, GreeterServer},
     HelloReply, HelloRequest,
 };
 use std::net::SocketAddr;
-use tonic::{Response as TonicResponse, Status};
 use tonic::transport::Server;
+use tonic::{Response as TonicResponse, Status};
+use tower::make::Shared;
+use tower::util::Either;
+use tower::{service_fn, Service};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod multiplex_service;
+mod http_body;
 
 mod proto {
     tonic::include_proto!("helloworld");
@@ -53,7 +59,7 @@ async fn main() {
         .init();
 
     // build the rest service
-    let rest = Router::new().route("/", get(web_root));
+    let mut rest = Router::new().route("/", get(web_root));
 
     let greeter_service = GreeterServer::new(GrpcServiceImpl::default());
 
@@ -62,21 +68,34 @@ async fn main() {
         .build()
         .unwrap();
 
-    let grpc = Server::builder()
-        .add_service(reflection_service)
+    let mut grpc = Server::builder()
         .add_service(greeter_service)
+        .add_service(reflection_service)
         .into_service();
 
-    // the line below works
-    // let grpc = GreeterServer::new(GrpcServiceImpl::default());
+    let service = Shared::new(service_fn(move |req| {
+        if is_grpc_request(&req) {
+            // Handle Tonic gRPC request
+            return Either::A(grpc.call(req).map_ok(|res| res.map(EitherBody::A)));
+        }
+        // Handle HTTP request
+        Either::B(rest.call(req).map_ok(|res| res.map(EitherBody::B)))
+    }));
 
-    // combine them into one service
-    let service = MultiplexService::new(rest, grpc);
+    let socket_addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    tracing::debug!("listening on {}", socket_addr);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::debug!("listening on {}", addr);
-    axum::Server::bind(&addr)
-        .serve(tower::make::Shared::new(service))
-        .await
-        .unwrap();
+    let server = axum::Server::bind(&socket_addr).serve(service);
+
+    server.await.unwrap();
+
+    tracing::info!("GRPC server shutdown");
+}
+
+fn is_grpc_request<B>(req: &Request<B>) -> bool {
+    req.headers()
+        .get(CONTENT_TYPE)
+        .map(|content_type| content_type.as_bytes())
+        .filter(|content_type| content_type.starts_with(b"application/grpc"))
+        .is_some()
 }
