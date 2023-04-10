@@ -5,7 +5,7 @@ use proto::{
 use tonic::transport::{server::Routes, Server};
 use tonic::{Request, Response, Status};
 use tower_http::classify::{GrpcErrorsAsFailures, SharedClassifier};
-use tower_http::trace::{Trace, TraceLayer};
+use tower_http::trace::{DefaultMakeSpan, Trace, TraceLayer};
 
 mod proto {
     tonic::include_proto!("echo");
@@ -49,8 +49,11 @@ pub fn setup_grpc() -> Trace<Routes, SharedClassifier<GrpcErrorsAsFailures>> {
         .build()
         .unwrap();
 
+    let trace_layer =
+        TraceLayer::new_for_grpc().make_span_with(DefaultMakeSpan::new().include_headers(true));
+
     Server::builder()
-        .layer(TraceLayer::new_for_grpc())
+        .layer(trace_layer)
         .add_service(reflection_service)
         .add_service(greeter_service)
         .into_service()
