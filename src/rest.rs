@@ -3,7 +3,7 @@ use axum::Router;
 use tower_http::trace::TraceLayer;
 
 async fn web_root() -> &'static str {
-    "Hello, World!"
+    "Echo, World!"
 }
 
 pub fn setup_rest() -> Router {

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package echo;
+
+service Echo {
+  rpc echo (EchoRequest) returns (EchoReply) {}
+  // test 4xx-like status
+  rpc notFound (EchoRequest) returns (EchoReply) {}
+  // test 5xx-like status
+  rpc internalError (EchoRequest) returns (EchoReply) {}
+}
+
+message EchoRequest {
+  string message = 1;
+}
+
+message EchoReply {
+  string message = 1;
+}

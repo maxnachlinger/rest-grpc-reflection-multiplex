@@ -1,7 +1,6 @@
 ```shell
-grpcurl -plaintext \
--d '{"name":"World"}' \
-127.0.0.1:3000 helloworld.Greeter/SayHello
+grpcurl -plaintext -d '{"message":"test message"}' \
+127.0.0.1:3000 echo.Echo/echo
 ```
 
 ```shell
