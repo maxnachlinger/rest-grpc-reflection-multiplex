@@ -5,7 +5,8 @@ use proto::{
 use tonic::transport::{server::Routes, Server};
 use tonic::{Request, Response, Status};
 use tower_http::classify::{GrpcErrorsAsFailures, SharedClassifier};
-use tower_http::trace::{DefaultMakeSpan, Trace, TraceLayer};
+use tower_http::trace::{MakeSpan, Trace, TraceLayer};
+use tracing::Span;
 
 mod proto {
     tonic::include_proto!("echo");
@@ -41,7 +42,29 @@ impl Echo for GrpcServiceImpl {
     }
 }
 
-pub fn setup_grpc() -> Trace<Routes, SharedClassifier<GrpcErrorsAsFailures>> {
+#[derive(Debug, Clone)]
+pub struct MakeGrpcSpan;
+
+impl MakeGrpcSpan {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl<B> MakeSpan<B> for MakeGrpcSpan {
+    fn make_span(&mut self, request: &hyper::Request<B>) -> Span {
+        // TODO - get otel headers
+        tracing::info_span!(
+            "request",
+            method = %request.method(),
+            uri = %request.uri(),
+            version = ?request.version(),
+            headers = ?request.headers(),
+        )
+    }
+}
+
+pub fn setup_grpc() -> Trace<Routes, SharedClassifier<GrpcErrorsAsFailures>, MakeGrpcSpan> {
     let greeter_service = EchoServer::new(GrpcServiceImpl::default());
 
     let reflection_service = tonic_reflection::server::Builder::configure()
@@ -49,14 +72,9 @@ pub fn setup_grpc() -> Trace<Routes, SharedClassifier<GrpcErrorsAsFailures>> {
         .build()
         .unwrap();
 
-    let trace_layer =
-        TraceLayer::new_for_grpc().make_span_with(DefaultMakeSpan::new().include_headers(true));
-
     Server::builder()
-        .layer(trace_layer)
+        .layer(TraceLayer::new_for_grpc().make_span_with(MakeGrpcSpan::new()))
         .add_service(reflection_service)
         .add_service(greeter_service)
         .into_service()
 }
-
-// TODO - make a classifier - https://docs.rs/tower-http/latest/tower_http/trace/index.html
