@@ -115,8 +115,6 @@ pub fn setup_grpc() -> Trace<
         .build()
         .unwrap();
 
-    // TODO - make classifier to distinguish 4xx/5xx errors
-
     let tracing_layer = TraceLayer::new_for_grpc()
         .make_span_with(MakeGrpcSpan::new())
         .on_response(OnGrpcResponse::new())
