@@ -1,11 +1,13 @@
+use http::HeaderValue;
 use proto::{
     echo_server::{Echo, EchoServer},
     EchoReply, EchoRequest,
 };
+use std::time::Duration;
 use tonic::transport::{server::Routes, Server};
-use tonic::{Request, Response, Status};
+use tonic::{Code, Request, Response, Status};
 use tower_http::classify::{GrpcErrorsAsFailures, SharedClassifier};
-use tower_http::trace::{MakeSpan, Trace, TraceLayer};
+use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, Trace, TraceLayer};
 use tracing::Span;
 
 mod proto {
@@ -13,6 +15,16 @@ mod proto {
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("echo_descriptor");
+}
+
+pub trait HeaderValueExt {
+    fn to_i32(&self) -> Option<i32>;
+}
+
+impl HeaderValueExt for HeaderValue {
+    fn to_i32(&self) -> Option<i32> {
+        self.to_str().ok()?.parse::<i32>().ok()
+    }
 }
 
 #[derive(Default)]
@@ -53,18 +65,61 @@ impl MakeGrpcSpan {
 
 impl<B> MakeSpan<B> for MakeGrpcSpan {
     fn make_span(&mut self, request: &hyper::Request<B>) -> Span {
-        // TODO - get otel headers
+        // TODO - get otel headers, create otel span
         tracing::info_span!(
             "request",
             method = %request.method(),
-            uri = %request.uri(),
+            path = %request.uri().path(),
             version = ?request.version(),
             headers = ?request.headers(),
         )
     }
 }
 
-pub fn setup_grpc() -> Trace<Routes, SharedClassifier<GrpcErrorsAsFailures>, MakeGrpcSpan> {
+#[derive(Clone, Debug)]
+pub struct OnGrpcResponse;
+
+impl OnGrpcResponse {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl<B> OnResponse<B> for OnGrpcResponse {
+    fn on_response(self, response: &hyper::Response<B>, latency: Duration, span: &Span) {
+        let latency = latency.as_millis();
+
+        let grpc_status = response
+            .headers()
+            .get("grpc-status")
+            .map_or(0, |value| value.to_i32().unwrap_or(0));
+
+        // bump request counter
+        // bump time histogran
+        match Code::from_i32(grpc_status) {
+            Code::Ok => {
+                println!("ok! {latency}");
+            }
+            Code::NotFound | Code::InvalidArgument => {
+                println!("4xx {latency}");
+            }
+            _ => {
+                println!("5xx {latency}");
+            }
+        }
+    }
+}
+
+pub fn setup_grpc() -> Trace<
+    Routes,
+    SharedClassifier<GrpcErrorsAsFailures>,
+    MakeGrpcSpan,
+    DefaultOnRequest,
+    OnGrpcResponse,
+    (),
+    (),
+    (),
+> {
     let greeter_service = EchoServer::new(GrpcServiceImpl::default());
 
     let reflection_service = tonic_reflection::server::Builder::configure()
@@ -72,8 +127,17 @@ pub fn setup_grpc() -> Trace<Routes, SharedClassifier<GrpcErrorsAsFailures>, Mak
         .build()
         .unwrap();
 
+    // TODO - make classifier to distinguish 4xx/5xx errors
+
+    let tracing_layer = TraceLayer::new_for_grpc()
+        .make_span_with(MakeGrpcSpan::new())
+        .on_response(OnGrpcResponse::new())
+        .on_body_chunk(())
+        .on_eos(())
+        .on_failure(());
+
     Server::builder()
-        .layer(TraceLayer::new_for_grpc().make_span_with(MakeGrpcSpan::new()))
+        .layer(tracing_layer)
         .add_service(reflection_service)
         .add_service(greeter_service)
         .into_service()
