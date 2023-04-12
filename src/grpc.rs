@@ -1,4 +1,3 @@
-use http::HeaderValue;
 use proto::{
     echo_server::{Echo, EchoServer},
     EchoReply, EchoRequest,
@@ -15,16 +14,6 @@ mod proto {
 
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
         tonic::include_file_descriptor_set!("echo_descriptor");
-}
-
-pub trait HeaderValueExt {
-    fn to_i32(&self) -> Option<i32>;
-}
-
-impl HeaderValueExt for HeaderValue {
-    fn to_i32(&self) -> Option<i32> {
-        self.to_str().ok()?.parse::<i32>().ok()
-    }
 }
 
 #[derive(Default)]
@@ -86,20 +75,19 @@ impl OnGrpcResponse {
 }
 
 impl<B> OnResponse<B> for OnGrpcResponse {
-    fn on_response(self, response: &hyper::Response<B>, latency: Duration, span: &Span) {
+    fn on_response(self, response: &hyper::Response<B>, latency: Duration, _span: &Span) {
         let latency = latency.as_millis();
 
-        let grpc_status = response
-            .headers()
-            .get("grpc-status")
-            .map_or(0, |value| value.to_i32().unwrap_or(0));
+        let code = Status::from_header_map(response.headers())
+            .unwrap_or_else(|| Status::ok("ok"))
+            .code();
 
-        // bump request counter
-        // bump time histogran
-        match Code::from_i32(grpc_status) {
+        // bump time histogram
+        match code {
             Code::Ok => {
                 println!("ok! {latency}");
             }
+            // TODO - expand this set
             Code::NotFound | Code::InvalidArgument => {
                 println!("4xx {latency}");
             }
